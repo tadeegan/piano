@@ -45,7 +45,8 @@ export function useKeyboard(enabled, onNoteOn, onNoteOff) {
 
       if (midiNote !== undefined && !pressedKeysRef.current.has(key)) {
         pressedKeysRef.current.add(key);
-        onNoteOn(midiNote);
+        // Keyboard presses use a fixed medium-high velocity (95)
+        onNoteOn(midiNote, 95);
         e.preventDefault();
       }
     };

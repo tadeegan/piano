@@ -1,10 +1,35 @@
 import React from 'react';
 import './Piano.css';
 
-const Piano = ({ activeNotes, onNoteOn, onNoteOff }) => {
+const Piano = ({ activeNotes, onNoteOn, onNoteOff, onLayout }) => {
   const octaves = 7;
   const startNote = 21;
   const [isMouseDown, setIsMouseDown] = React.useState(false);
+  const pianoRef = React.useRef(null);
+  const [keyWidth, setKeyWidth] = React.useState(30);
+
+  React.useEffect(() => {
+    const updateKeyWidth = () => {
+      if (pianoRef.current) {
+        const containerWidth = pianoRef.current.offsetWidth - 40; // minus padding
+        const totalWhiteKeys = 52; // 7 octaves * 7 white keys + 3
+        const calculatedWidth = containerWidth / totalWhiteKeys;
+        setKeyWidth(calculatedWidth);
+      }
+    };
+
+    updateKeyWidth();
+    window.addEventListener('resize', updateKeyWidth);
+    return () => window.removeEventListener('resize', updateKeyWidth);
+  }, []);
+
+  // Report layout to parent for timeline alignment
+  React.useEffect(() => {
+    if (onLayout && pianoRef.current) {
+      // Piano has 20px padding on each side (from CSS)
+      onLayout({ keyWidth, pianoLeftPadding: 20 });
+    }
+  }, [keyWidth, onLayout]);
 
   const isBlackKey = (note) => {
     const noteInOctave = note % 12;
@@ -12,10 +37,28 @@ const Piano = ({ activeNotes, onNoteOn, onNoteOff }) => {
   };
 
   const getNotePosition = (note) => {
-    const noteInOctave = note % 12;
-    const octave = Math.floor((note - startNote) / 12);
-    const whiteKeyPositions = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6];
-    return octave * 7 + whiteKeyPositions[noteInOctave];
+    // For black keys, find the white key position to the left
+    // For white keys, count white keys from start
+    let whiteKeyCount = 0;
+
+    if (isBlackKey(note)) {
+      // Find the white key just before this black key
+      for (let n = startNote; n < note; n++) {
+        if (!isBlackKey(n)) {
+          whiteKeyCount++;
+        }
+      }
+      // Return the position of the last white key (the one to the left of this black key)
+      return whiteKeyCount - 1;
+    } else {
+      // For white keys, count all white keys before this one
+      for (let n = startNote; n < note; n++) {
+        if (!isBlackKey(n)) {
+          whiteKeyCount++;
+        }
+      }
+      return whiteKeyCount;
+    }
   };
 
   const getNoteName = (note) => {
@@ -27,7 +70,9 @@ const Piano = ({ activeNotes, onNoteOn, onNoteOff }) => {
 
   const handleMouseDown = (note) => {
     setIsMouseDown(true);
-    onNoteOn(note);
+    // Add slight random variation to velocity (85-105) for more natural feel
+    const velocity = 85 + Math.floor(Math.random() * 20);
+    onNoteOn(note, velocity);
   };
 
   const handleMouseUp = (note) => {
@@ -37,7 +82,9 @@ const Piano = ({ activeNotes, onNoteOn, onNoteOff }) => {
 
   const handleMouseEnter = (note) => {
     if (isMouseDown) {
-      onNoteOn(note);
+      // Slightly lower velocity for drag (70-90) to feel different from direct clicks
+      const velocity = 70 + Math.floor(Math.random() * 20);
+      onNoteOn(note, velocity);
     }
   };
 
@@ -69,7 +116,10 @@ const Piano = ({ activeNotes, onNoteOn, onNoteOff }) => {
           <div
             key={`white-${note}`}
             className={`piano-key white-key ${isActive ? 'active' : ''}`}
-            style={{ left: `${getNotePosition(note) * 30}px` }}
+            style={{
+              left: `${getNotePosition(note) * keyWidth}px`,
+              width: `${keyWidth}px`
+            }}
             title={getNoteName(note)}
             onMouseDown={() => handleMouseDown(note)}
             onMouseUp={() => handleMouseUp(note)}
@@ -87,12 +137,15 @@ const Piano = ({ activeNotes, onNoteOn, onNoteOff }) => {
       const isActive = activeNotes.has(note);
 
       if (isBlackKey(note)) {
-        const position = getNotePosition(note) * 30;
+        const position = getNotePosition(note) * keyWidth;
         keys.push(
           <div
             key={`black-${note}`}
             className={`piano-key black-key ${isActive ? 'active' : ''}`}
-            style={{ left: `${position + 20}px` }}
+            style={{
+              left: `${position + (keyWidth * 0.67)}px`,
+              width: `${keyWidth * 0.67}px`
+            }}
             title={getNoteName(note)}
             onMouseDown={() => handleMouseDown(note)}
             onMouseUp={() => handleMouseUp(note)}
@@ -108,7 +161,7 @@ const Piano = ({ activeNotes, onNoteOn, onNoteOff }) => {
 
   return (
     <div className="piano-container">
-      <div className="piano">
+      <div className="piano" ref={pianoRef}>
         {renderKeys()}
       </div>
     </div>

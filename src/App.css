@@ -1,49 +1,94 @@
-#root {
-  max-width: 100%;
-  margin: 0 auto;
-  padding: 0;
-  text-align: center;
+.app-bg {
+  background:
+    repeating-linear-gradient(
+      0deg,
+      #1a1c22 0px,
+      #1a1c22 2px,
+      #15171c 2px,
+      #15171c 4px
+    ),
+    radial-gradient(ellipse at center, #2a2d35 0%, #15171c 100%);
 }
 
-.app {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slideDown {
+  animation: slideDown 0.2s ease;
 }
 
 .app-header {
-  margin-bottom: 40px;
-  color: white;
+  margin-bottom: 10px;
+  color: #c8d0d8;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #2a2d35 0%, #1f2128 100%);
+  padding: 20px 30px;
+  border: 2px solid #3d424d;
+  border-radius: 2px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 4px 8px rgba(0, 0, 0, 0.6);
+  position: relative;
+}
+
+.app-header::before,
+.app-header::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: radial-gradient(circle, #1a1c22 30%, #3d424d 60%, #2a2d35 100%);
+  border-radius: 50%;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.app-header::before {
+  top: 12px;
+  left: 12px;
+}
+
+.app-header::after {
+  top: 12px;
+  right: 12px;
 }
 
 .app-header h1 {
-  font-size: 3rem;
-  margin-bottom: 20px;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+  font-size: 1.8rem;
+  margin: 0 0 12px 0;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #e8edf2 0%, #9ba5b0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.8));
 }
 
 .controls-container {
   display: flex;
-  gap: 20px;
+  gap: 15px;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  margin: 20px 0;
+  margin: 5px 0;
 }
 
 .status-indicator {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 24px;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border-radius: 25px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  padding: 10px 20px;
+  background: linear-gradient(180deg, #1f2128 0%, #15171c 100%);
+  border-radius: 3px;
+  border: 2px solid #3d424d;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.8),
+    0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .status-dot {
@@ -54,19 +99,28 @@
 }
 
 .status-indicator.connected .status-dot {
-  background-color: #51cf66;
-  box-shadow: 0 0 10px #51cf66;
+  background-color: #4ade80;
+  box-shadow:
+    0 0 8px #4ade80,
+    0 0 15px rgba(74, 222, 128, 0.5),
+    inset 0 -1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .status-indicator.disconnected .status-dot {
-  background-color: #ffd43b;
-  box-shadow: 0 0 10px #ffd43b;
+  background-color: #fb923c;
+  box-shadow:
+    0 0 8px #fb923c,
+    0 0 15px rgba(251, 146, 60, 0.5),
+    inset 0 -1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .status-indicator.error .status-dot,
 .status-indicator.unsupported .status-dot {
-  background-color: #ff6b6b;
-  box-shadow: 0 0 10px #ff6b6b;
+  background-color: #ef4444;
+  box-shadow:
+    0 0 8px #ef4444,
+    0 0 15px rgba(239, 68, 68, 0.5),
+    inset 0 -1px 3px rgba(0, 0, 0, 0.5);
   animation: none;
 }
 
@@ -80,56 +134,85 @@
 }
 
 .status-text {
-  font-weight: 600;
-  font-size: 1rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #9ba5b0;
 }
 
 .error-message {
-  color: #ff6b6b;
+  color: #fca5a5;
   margin-top: 10px;
-  padding: 10px;
-  background: rgba(255, 107, 107, 0.1);
-  border-radius: 8px;
-  border: 1px solid rgba(255, 107, 107, 0.3);
+  padding: 10px 15px;
+  background: linear-gradient(180deg, #2d1a1a 0%, #1f1212 100%);
+  border-radius: 2px;
+  border: 2px solid #5c2626;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.8),
+    0 1px 0 rgba(255, 255, 255, 0.03);
+  font-weight: 600;
+  letter-spacing: 0.3px;
 }
 
 .instructions {
-  font-size: 1.1rem;
-  margin: 20px 0;
-  opacity: 0.9;
+  font-size: 0.8rem;
+  margin: 8px 0 5px 0;
+  color: #7d8794;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
 }
 
 .active-notes-display {
-  font-size: 1rem;
-  padding: 10px 20px;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 20px;
+  font-size: 0.85rem;
+  padding: 8px 16px;
+  background: linear-gradient(180deg, #15171c 0%, #0f1014 100%);
+  border-radius: 2px;
+  border: 2px solid #2a2d35;
   display: inline-block;
-  margin-top: 10px;
-  font-weight: 500;
+  margin-top: 5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #fb923c;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.8),
+    0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .panic-button {
-  padding: 12px 24px;
-  background: rgba(255, 107, 107, 0.2);
-  backdrop-filter: blur(10px);
-  border: 2px solid rgba(255, 107, 107, 0.4);
-  border-radius: 25px;
-  color: white;
-  font-weight: 600;
-  font-size: 1rem;
+  padding: 10px 20px;
+  background: linear-gradient(180deg, #5c2626 0%, #3d1818 100%);
+  border: 2px solid #6b2d2d;
+  border-radius: 2px;
+  color: #fca5a5;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.15s ease;
   font-family: inherit;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 100, 100, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 2px 4px rgba(0, 0, 0, 0.6);
+  position: relative;
 }
 
 .panic-button:hover {
-  background: rgba(255, 107, 107, 0.3);
-  border-color: rgba(255, 107, 107, 0.6);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+  background: linear-gradient(180deg, #6b2d2d 0%, #4a1d1d 100%);
+  border-color: #7d3636;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 100, 100, 0.2),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 3px 6px rgba(0, 0, 0, 0.7),
+    0 0 10px rgba(239, 68, 68, 0.3);
 }
 
 .panic-button:active {
-  transform: translateY(0);
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.8),
+    0 1px 2px rgba(0, 0, 0, 0.6);
 }
