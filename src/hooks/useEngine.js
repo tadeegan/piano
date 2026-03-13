@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useSyncExternalStore, useCallback } from 'react';
 import engine from '../engine';
 
-/** Subscribe to active notes (Set of MIDI numbers) */
+/** Subscribe to active notes — Map<midiNote, Set<sourceId>> */
 export function useActiveNotes() {
-  const notesRef = useRef(new Set());
+  const notesRef = useRef(new Map());
 
   const subscribe = useCallback((cb) => engine.onActiveNotesChange((s) => {
     notesRef.current = s;
@@ -15,9 +15,23 @@ export function useActiveNotes() {
   return useSyncExternalStore(subscribe, getSnapshot);
 }
 
+/** Subscribe to sources Map */
+export function useSources() {
+  const sourcesRef = useRef(engine.getSources());
+
+  const subscribe = useCallback((cb) => engine.onSourcesChange((s) => {
+    sourcesRef.current = s;
+    cb();
+  }), []);
+
+  const getSnapshot = useCallback(() => sourcesRef.current, []);
+
+  return useSyncExternalStore(subscribe, getSnapshot);
+}
+
 /** Subscribe to timeline events + held notes + breaks */
 export function useTimeline() {
-  const snapRef = useRef({ events: [], heldNotes: new Map(), breaks: [], inBreak: false });
+  const snapRef = useRef({ events: [], heldNotes: new Map(), breaks: [], segments: [], inBreak: false, bpm: 120, beatsPerMeasure: 4 });
 
   const subscribe = useCallback((cb) => engine.onTimelineChange((s) => {
     snapRef.current = s;

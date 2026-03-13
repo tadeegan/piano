@@ -1,7 +1,32 @@
 import React from 'react';
+import { useSources } from '../hooks/useEngine';
 import './Piano.css';
 
+function getActiveColor(note, activeNotes, sources) {
+  const sourceIds = activeNotes.get(note);
+  if (!sourceIds || sourceIds.size === 0) return null;
+  // Prefer user color if user is one of the sources
+  if (sourceIds.has('user')) {
+    const s = sources.get('user');
+    return s ? s.color : '#3b82f6';
+  }
+  // Otherwise use the first source's color
+  for (const id of sourceIds) {
+    const s = sources.get(id);
+    if (s) return s.color;
+  }
+  return '#3b82f6';
+}
+
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return { r, g, b };
+}
+
 const Piano = ({ activeNotes, onNoteOn, onNoteOff, onLayout }) => {
+  const sources = useSources();
   const octaves = 7;
   const startNote = 21;
   const [isMouseDown, setIsMouseDown] = React.useState(false);
@@ -110,6 +135,8 @@ const Piano = ({ activeNotes, onNoteOn, onNoteOff, onLayout }) => {
     for (let i = 0; i < totalKeys; i++) {
       const note = startNote + i;
       const isActive = activeNotes.has(note);
+      const color = isActive ? getActiveColor(note, activeNotes, sources) : null;
+      const rgb = color ? hexToRgb(color) : null;
 
       if (!isBlackKey(note)) {
         keys.push(
@@ -118,7 +145,11 @@ const Piano = ({ activeNotes, onNoteOn, onNoteOff, onLayout }) => {
             className={`piano-key white-key ${isActive ? 'active' : ''}`}
             style={{
               left: `${getNotePosition(note) * keyWidth}px`,
-              width: `${keyWidth}px`
+              width: `${keyWidth}px`,
+              ...(isActive && rgb ? {
+                background: `linear-gradient(180deg, rgb(${rgb.r},${rgb.g},${rgb.b}) 0%, rgb(${Math.round(rgb.r*0.7)},${Math.round(rgb.g*0.7)},${Math.round(rgb.b*0.7)}) 50%, rgb(${Math.round(rgb.r*0.5)},${Math.round(rgb.g*0.5)},${Math.round(rgb.b*0.5)}) 100%)`,
+                boxShadow: `inset 0 2px 6px rgba(0,0,0,0.6), inset 0 -1px 0 rgba(${rgb.r},${rgb.g},${rgb.b},0.3), 0 0 12px rgba(${rgb.r},${rgb.g},${rgb.b},0.6)`,
+              } : {}),
             }}
             title={getNoteName(note)}
             onMouseDown={() => handleMouseDown(note)}
@@ -135,6 +166,8 @@ const Piano = ({ activeNotes, onNoteOn, onNoteOff, onLayout }) => {
     for (let i = 0; i < totalKeys; i++) {
       const note = startNote + i;
       const isActive = activeNotes.has(note);
+      const color = isActive ? getActiveColor(note, activeNotes, sources) : null;
+      const rgb = color ? hexToRgb(color) : null;
 
       if (isBlackKey(note)) {
         const position = getNotePosition(note) * keyWidth;
@@ -144,7 +177,11 @@ const Piano = ({ activeNotes, onNoteOn, onNoteOff, onLayout }) => {
             className={`piano-key black-key ${isActive ? 'active' : ''}`}
             style={{
               left: `${position + (keyWidth * 0.67)}px`,
-              width: `${keyWidth * 0.67}px`
+              width: `${keyWidth * 0.67}px`,
+              ...(isActive && rgb ? {
+                background: `linear-gradient(180deg, rgb(${rgb.r},${rgb.g},${rgb.b}) 0%, rgb(${Math.round(rgb.r*0.7)},${Math.round(rgb.g*0.7)},${Math.round(rgb.b*0.7)}) 50%, rgb(${Math.round(rgb.r*0.5)},${Math.round(rgb.g*0.5)},${Math.round(rgb.b*0.5)}) 100%)`,
+                boxShadow: `inset 0 2px 6px rgba(0,0,0,0.8), inset 0 -1px 0 rgba(${rgb.r},${rgb.g},${rgb.b},0.3), 0 0 15px rgba(${rgb.r},${rgb.g},${rgb.b},0.8), 0 2px 4px rgba(0,0,0,0.8)`,
+              } : {}),
             }}
             title={getNoteName(note)}
             onMouseDown={() => handleMouseDown(note)}

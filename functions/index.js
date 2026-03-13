@@ -1,47 +1,30 @@
-import "dotenv/config";
+import { onRequest } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
 import express from "express";
 import cors from "cors";
 import Anthropic from "@anthropic-ai/sdk";
 
-const client = new Anthropic();
+const anthropicKey = defineSecret("ANTHROPIC_API_KEY");
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-function buildSystemPrompt(bpm, beatsPerMeasure) {
-  return `You are a musical AI assistant connected to a web piano. Respond with music using bars and beats. If asked to explain something, use text steps to explain what you're about to play, then notes steps to play it. Keep text brief and musical.
-
-Current tempo: ${bpm} BPM, time signature: ${beatsPerMeasure}/4.
+const systemPrompt = `You are a musical AI assistant connected to a web piano. Respond a music chord or sequence. If asked to explain something, use text steps to explain what you're about to play, then notes steps to play it. Keep text brief and musical.
 
 MIDI reference: C4=60, D4=62, E4=64, F4=65, G4=67, A4=69, B4=71, C5=72. Sharps/flats: C#4=61, Eb4=63, F#4=66, Ab4=68, Bb4=70.
 Velocity dynamics: pp=30, p=50, mp=70, mf=85, f=100, ff=120.
-
-TIMING: Use bar and beat to position notes. bar=1 beat=1 is the start. Beats are 1-indexed.
-- Chords: same bar and beat values for simultaneous notes.
-- Rhythm examples at ${beatsPerMeasure}/4:
-  - Quarter notes on beats: beat 1, 2, 3, 4
-  - Eighth notes: beat 1, 1.5, 2, 2.5, ...
-  - Sixteenth notes: beat 1, 1.25, 1.5, 1.75, ...
-  - Triplets: beat 1, 1.33, 1.67, ...
-
-DURATION: Specify duration in beats (not milliseconds).
-  - Whole note = ${beatsPerMeasure}, half = ${beatsPerMeasure / 2}, quarter = 1, eighth = 0.5, sixteenth = 0.25.
-  - Dotted quarter = 1.5, dotted half = ${beatsPerMeasure / 2 * 1.5}.
-
-The beatsPerMeasure field should match the current time signature (${beatsPerMeasure}).`;
-}
+Use startTime offsets within each notes step for rhythm and chords (simultaneous notes share the same startTime).`;
 
 const noteSchema = {
   type: "object",
-  required: ["midi", "velocity", "bar", "beat", "duration", "beatsPerMeasure"],
+  required: ["midi", "velocity", "duration", "startTime"],
   additionalProperties: false,
   properties: {
     midi: { type: "integer", description: "MIDI note number (21-108)" },
     velocity: { type: "integer", description: "Note velocity (1-127)" },
-    bar: { type: "integer", description: "Bar number (1-indexed)" },
-    beat: { type: "number", description: "Beat position within the bar (1-indexed, can be fractional like 1.5 for 'and')" },
-    duration: { type: "number", description: "Duration in beats (1=quarter, 0.5=eighth, 2=half, etc.)" },
-    beatsPerMeasure: { type: "integer", description: "Beats per measure for this note (matches time signature)" },
+    duration: { type: "integer", description: "Duration in ms (50-5000)" },
+    startTime: { type: "integer", description: "Start time offset in ms from step start" },
   },
 };
 
@@ -88,12 +71,12 @@ function describeNotes(noteSequence) {
   return noteSequence.map((n) => {
     const name = noteNames[n.midi % 12];
     const octave = Math.floor((n.midi - 12) / 12);
-    return `${name}${octave}(midi:${n.midi}, vel:${n.velocity}, bar:${n.bar}, beat:${n.beat}, dur:${n.duration} beats)`;
+    return `${name}${octave}(midi:${n.midi}, vel:${n.velocity}, dur:${n.duration}ms, t:${n.startTime}ms)`;
   }).join(", ");
 }
 
 app.post("/api/chat", async (req, res) => {
-  const { message, noteSequence, bpm = 120, beatsPerMeasure = 4, history } = req.body;
+  const { message, noteSequence, history } = req.body;
 
   // Build current user message
   let userContent = "";
@@ -123,13 +106,14 @@ app.post("/api/chat", async (req, res) => {
   try {
     console.log("\n--- Chat Request ---");
     console.log("User message:", message);
-    console.log("BPM:", bpm, "Beats per measure:", beatsPerMeasure);
     console.log("History length:", history?.length || 0);
+
+    const client = new Anthropic();
 
     const response = await client.messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 4096,
-      system: buildSystemPrompt(bpm, beatsPerMeasure),
+      system: systemPrompt,
       messages,
       output_config: { format: responseSchema },
     });
@@ -149,7 +133,4 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Piano AI server running on http://localhost:${PORT}`);
-});
+export const api = onRequest({ secrets: [anthropicKey], timeoutSeconds: 120 }, app);

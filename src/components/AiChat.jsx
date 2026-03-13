@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 
-const API_URL = 'http://localhost:3001';
+const API_URL = import.meta.env.DEV ? 'http://localhost:3001' : '';
 
 function speakText(text) {
   return new Promise((resolve) => {
@@ -28,15 +28,45 @@ function playNotesWithDuration(notes, onPlaySequence) {
   });
 }
 
-function StepMessage({ step, onPlaySequence }) {
+/** Convert bar/beat-based notes from AI to ms-based notes for playback */
+function beatsToMs(notes, bpm) {
+  const msPerBeat = 60000 / bpm;
+  return notes.map(n => ({
+    midi: n.midi,
+    velocity: n.velocity,
+    startTime: Math.round(((n.bar - 1) * (n.beatsPerMeasure || 4) + (n.beat - 1)) * msPerBeat),
+    duration: Math.round(n.duration * msPerBeat),
+  }));
+}
+
+/** Convert ms-based recorded notes to bar/beat format for sending to AI */
+function msToBeats(notes, bpm, beatsPerMeasure) {
+  const msPerBeat = 60000 / bpm;
+  return notes.map(n => {
+    const totalBeats = n.startTime / msPerBeat;
+    const bar = Math.floor(totalBeats / beatsPerMeasure) + 1;
+    const beat = (totalBeats % beatsPerMeasure) + 1;
+    const dur = n.duration / msPerBeat;
+    return {
+      midi: n.midi,
+      velocity: n.velocity,
+      bar,
+      beat: Math.round(beat * 100) / 100,
+      duration: Math.round(dur * 100) / 100,
+    };
+  });
+}
+
+function StepMessage({ step, onPlaySequence, bpm }) {
   if (step.type === 'text') {
     return <div className="whitespace-pre-wrap">{step.text}</div>;
   }
   if (step.type === 'notes') {
+    const msNotes = beatsToMs(step.notes, bpm);
     return (
       <button
         className="px-2.5 py-1 bg-[#3d6b9e] hover:bg-[#4a7fb5] text-white text-xs rounded-md transition-colors"
-        onClick={() => onPlaySequence(step.notes)}
+        onClick={() => onPlaySequence(msNotes)}
       >
         ▶ Play {step.notes.length} notes
       </button>
@@ -45,13 +75,18 @@ function StepMessage({ step, onPlaySequence }) {
   return null;
 }
 
-export default function AiChat({ noteRecorder, onPlaySequence, speech }) {
+export default function AiChat({ noteRecorder, onPlaySequence, speech, bpm = 120, beatsPerMeasure = 4 }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const loadingRef = useRef(false);
   const messagesRef = useRef([]);
+  const bpmRef = useRef(bpm);
+  const beatsRef = useRef(beatsPerMeasure);
+
+  useEffect(() => { bpmRef.current = bpm; }, [bpm]);
+  useEffect(() => { beatsRef.current = beatsPerMeasure; }, [beatsPerMeasure]);
 
   useEffect(() => {
     loadingRef.current = loading;
@@ -70,7 +105,8 @@ export default function AiChat({ noteRecorder, onPlaySequence, speech }) {
       if (step.type === 'text') {
         await speakText(step.text);
       } else if (step.type === 'notes') {
-        await playNotesWithDuration(step.notes, onPlaySequence);
+        const msNotes = beatsToMs(step.notes, bpmRef.current);
+        await playNotesWithDuration(msNotes, onPlaySequence);
       }
     }
   }, [onPlaySequence]);
@@ -79,10 +115,14 @@ export default function AiChat({ noteRecorder, onPlaySequence, speech }) {
     if (!text || loadingRef.current) return;
 
     const recordedNotes = noteRecorder.current?.getAndClear() || [];
+    // Convert recorded notes to bar/beat format
+    const beatNotes = recordedNotes.length > 0
+      ? msToBeats(recordedNotes, bpmRef.current, beatsRef.current)
+      : [];
 
     setMessages((prev) => [
       ...prev,
-      { role: 'user', text, notes: recordedNotes.length > 0 ? recordedNotes : null },
+      { role: 'user', text, notes: beatNotes.length > 0 ? beatNotes : null, bpm: bpmRef.current, beatsPerMeasure: beatsRef.current },
     ]);
     setInput('');
     setLoading(true);
@@ -93,7 +133,9 @@ export default function AiChat({ noteRecorder, onPlaySequence, speech }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text,
-          noteSequence: recordedNotes,
+          noteSequence: beatNotes,
+          bpm: bpmRef.current,
+          beatsPerMeasure: beatsRef.current,
           history: messagesRef.current,
         }),
       });
@@ -105,7 +147,7 @@ export default function AiChat({ noteRecorder, onPlaySequence, speech }) {
 
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', steps },
+        { role: 'assistant', steps, bpm: bpmRef.current },
       ]);
 
       playbackSteps(steps);
@@ -194,7 +236,7 @@ export default function AiChat({ noteRecorder, onPlaySequence, speech }) {
                 {msg.notes && (
                   <button
                     className="mt-1.5 px-2.5 py-1 bg-[#3d6b9e] hover:bg-[#4a7fb5] text-white text-xs rounded-md transition-colors"
-                    onClick={() => onPlaySequence(msg.notes)}
+                    onClick={() => onPlaySequence(beatsToMs(msg.notes, msg.bpm || bpm))}
                   >
                     ▶ Play {msg.notes.length} notes
                   </button>
@@ -203,7 +245,7 @@ export default function AiChat({ noteRecorder, onPlaySequence, speech }) {
             ) : (
               <div className="flex flex-col gap-1.5">
                 {(msg.steps || []).map((step, j) => (
-                  <StepMessage key={j} step={step} onPlaySequence={onPlaySequence} />
+                  <StepMessage key={j} step={step} onPlaySequence={onPlaySequence} bpm={msg.bpm || bpm} />
                 ))}
               </div>
             )}

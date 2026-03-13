@@ -92,6 +92,55 @@ function createEngine() {
   const activeOscillators = new Map();
   let instrumentType = 'piano';
 
+  // --- Source registry ---
+  const sources = new Map([
+    ['user', { name: 'You', color: '#3b82f6' }],
+    ['ai', { name: 'AI', color: '#f97316' }],
+  ]);
+  const mutedSources = new Set();
+  const sourcesListeners = new Set();
+
+  function notifySources() {
+    const snapshot = new Map(sources);
+    sourcesListeners.forEach(fn => fn(snapshot));
+  }
+
+  function onSourcesChange(fn) {
+    sourcesListeners.add(fn);
+    return () => sourcesListeners.delete(fn);
+  }
+
+  function getSources() { return new Map(sources); }
+
+  function registerSource(id, { name, color }) {
+    sources.set(id, { name, color });
+    notifySources();
+  }
+
+  function unregisterSource(id) {
+    sources.delete(id);
+    mutedSources.delete(id);
+    // Release all held notes for this source to prevent stuck notes
+    for (const [midi, info] of heldNotes.entries()) {
+      if (info.source === id) {
+        noteOff(midi, id);
+      }
+    }
+    notifySources();
+  }
+
+  function muteSource(id) {
+    mutedSources.add(id);
+    notifySources();
+  }
+
+  function unmuteSource(id) {
+    mutedSources.delete(id);
+    notifySources();
+  }
+
+  function isSourceMuted(id) { return mutedSources.has(id); }
+
   // --- Audio state subscription ---
   let audioState = 'uninitialized'; // 'uninitialized' | 'suspended' | 'running'
   const audioStateListeners = new Set();
@@ -248,11 +297,19 @@ function createEngine() {
     activeOscillators.clear();
   }
 
+  // --- Tempo / time signature ---
+  let bpm = 120;
+  let beatsPerMeasure = 4;
+
   // --- Timeline ---
   let timeOrigin = null; // performance.now() when first note played
   let timelineEvents = []; // completed: { midi, velocity, duration, globalTime, source }
   const heldNotes = new Map(); // midi -> { globalTime, source }
   const timelineListeners = new Set();
+
+  // --- Segments (for bar/beat grid) ---
+  // Each segment starts a new bar 1. First segment starts when first note is played.
+  let segments = []; // [{ startTime: globalTime }]
 
   // --- Break detection ---
   const BREAK_THRESHOLD_MS = 2000;
@@ -285,6 +342,13 @@ function createEngine() {
   function isInBreak() { return currentBreakStart !== null; }
   function getTotalPauseTime() { return totalPauseTime; }
 
+  function setBpm(v) { bpm = Math.max(30, Math.min(300, v)); notifyTimeline(); }
+  function setBeatsPerMeasure(v) { beatsPerMeasure = Math.max(1, Math.min(12, v)); notifyTimeline(); }
+  function getBpm() { return bpm; }
+  function getBeatsPerMeasure() { return beatsPerMeasure; }
+  function getMsPerBeat() { return 60000 / bpm; }
+  function getMsPerBar() { return getMsPerBeat() * beatsPerMeasure; }
+
   function startBreak() {
     if (currentBreakStart !== null) return; // already in break
     const breakTime = performance.now() - timeOrigin - totalPauseTime;
@@ -302,6 +366,9 @@ function createEngine() {
     const pauseDuration = raw - totalPauseTime - currentBreakStart;
     totalPauseTime += pauseDuration;
     currentBreakStart = null;
+    // New segment starts here (new bar 1)
+    const segTime = raw - totalPauseTime;
+    segments = [...segments, { startTime: segTime }];
     notifyTimeline();
   }
 
@@ -327,9 +394,12 @@ function createEngine() {
       events: timelineEvents,
       heldNotes: new Map(heldNotes),
       breaks,
+      segments,
       inBreak: currentBreakStart !== null,
       totalPauseTime,
       effectiveElapsed: getEffectiveElapsed(),
+      bpm,
+      beatsPerMeasure,
     };
     timelineListeners.forEach(fn => fn(snapshot));
   }
@@ -365,11 +435,12 @@ function createEngine() {
   }
 
   // --- Active notes (for piano key highlighting) ---
-  const activeNotes = new Set();
+  // Map<midiNote, Set<sourceId>> — tracks which sources are pressing each key
+  const activeNotes = new Map();
   const activeNotesListeners = new Set();
 
   function notifyActiveNotes() {
-    const snapshot = new Set(activeNotes);
+    const snapshot = new Map(activeNotes);
     activeNotesListeners.forEach(fn => fn(snapshot));
   }
 
@@ -380,18 +451,28 @@ function createEngine() {
 
   // --- Public noteOn / noteOff ---
   function noteOn(midi, velocity = 90, source = 'user') {
-    playNoteAudio(midi, velocity);
+    // Skip audio if source is muted
+    if (!mutedSources.has(source)) {
+      playNoteAudio(midi, velocity);
+    }
 
     // End break if we're in one
     if (currentBreakStart !== null) endBreak();
     cancelBreakCheck();
 
-    // Active notes
-    activeNotes.add(midi);
+    // Active notes — track which sources are pressing each key
+    if (!activeNotes.has(midi)) {
+      activeNotes.set(midi, new Set());
+    }
+    activeNotes.get(midi).add(source);
     notifyActiveNotes();
 
     // Timeline — held
     const t = getTime();
+    // First note ever: create initial segment
+    if (segments.length === 0) {
+      segments = [{ startTime: t }];
+    }
     heldNotes.set(midi, { globalTime: t, source });
     notifyTimeline();
 
@@ -404,10 +485,17 @@ function createEngine() {
   }
 
   function noteOff(midi, source = 'user') {
-    stopNoteAudio(midi);
-
-    // Active notes
-    activeNotes.delete(midi);
+    // Only stop audio if no other unmuted source is holding this note
+    const sourcesHolding = activeNotes.get(midi);
+    if (sourcesHolding) {
+      sourcesHolding.delete(source);
+      if (sourcesHolding.size === 0) {
+        activeNotes.delete(midi);
+        stopNoteAudio(midi);
+      }
+    } else {
+      stopNoteAudio(midi);
+    }
     notifyActiveNotes();
 
     // Timeline — move from held to completed
@@ -483,8 +571,25 @@ function createEngine() {
     getTimeOrigin,
     getEffectiveElapsed,
 
+    // Tempo
+    setBpm,
+    setBeatsPerMeasure,
+    getBpm,
+    getBeatsPerMeasure,
+    getMsPerBeat,
+    getMsPerBar,
+
     // Active notes subscriptions
     onActiveNotesChange,
+
+    // Source registry
+    registerSource,
+    unregisterSource,
+    getSources,
+    onSourcesChange,
+    muteSource,
+    unmuteSource,
+    isSourceMuted,
 
     // Recorder
     getAndClearRecording,

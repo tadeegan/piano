@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import engine from '../engine';
 
 const PX_PER_MS = 0.12;
@@ -35,7 +35,54 @@ function getNoteWidth(midi, keyWidth) {
   return isBlackKey(midi) ? keyWidth * 0.67 : keyWidth;
 }
 
-export default function Timeline({ events, heldNotes, breaks, inBreak, keyWidth, pianoLeftPadding, timeOrigin }) {
+/** Build bar/beat grid lines for all segments */
+function buildGridLines(segments, breaks, bpm, beatsPerMeasure, effectiveElapsed) {
+  if (segments.length === 0 || bpm <= 0) return [];
+
+  const msPerBeat = 60000 / bpm;
+  const msPerBar = msPerBeat * beatsPerMeasure;
+  const lines = [];
+
+  for (let si = 0; si < segments.length; si++) {
+    const segStart = segments[si].startTime;
+    // Segment ends at next break or current time
+    let segEnd;
+    if (si < breaks.length) {
+      // This segment ends at break[si] (break i corresponds to the end of segment i)
+      segEnd = breaks[si].globalTime;
+    } else {
+      // Last segment: extends to current time
+      segEnd = effectiveElapsed;
+    }
+
+    const segDuration = segEnd - segStart;
+    if (segDuration <= 0) continue;
+
+    // How many beats fit in this segment
+    const totalBeats = Math.ceil(segDuration / msPerBeat) + 1;
+
+    for (let b = 0; b < totalBeats; b++) {
+      const timeInSegment = b * msPerBeat;
+      if (timeInSegment > segDuration) break;
+
+      const globalTime = segStart + timeInSegment;
+      const beatInBar = b % beatsPerMeasure;
+      const barNumber = Math.floor(b / beatsPerMeasure) + 1;
+      const isBarLine = beatInBar === 0;
+
+      lines.push({
+        globalTime,
+        isBarLine,
+        barNumber,
+        beatInBar: beatInBar + 1,
+      });
+    }
+  }
+
+  return lines;
+}
+
+export default function Timeline({ events, heldNotes, breaks, segments, inBreak, bpm, beatsPerMeasure, keyWidth, pianoLeftPadding, timeOrigin, sources }) {
   const containerRef = useRef(null);
   const trackRef = useRef(null);
   const rafRef = useRef(null);
@@ -44,6 +91,13 @@ export default function Timeline({ events, heldNotes, breaks, inBreak, keyWidth,
 
   useEffect(() => { timeOriginRef.current = timeOrigin; }, [timeOrigin]);
   useEffect(() => { heldNotesRef.current = heldNotes; }, [heldNotes]);
+
+  const effectiveElapsed = engine.getEffectiveElapsed();
+
+  const gridLines = useMemo(
+    () => buildGridLines(segments || [], breaks || [], bpm || 120, beatsPerMeasure || 4, effectiveElapsed),
+    [segments, breaks, bpm, beatsPerMeasure, effectiveElapsed]
+  );
 
   useEffect(() => {
     const animate = () => {
@@ -93,27 +147,53 @@ export default function Timeline({ events, heldNotes, breaks, inBreak, keyWidth,
 
       {/* Track: positioned at top:0, shifted via translateY so "now" = container bottom */}
       <div ref={trackRef} className="absolute top-0 left-0 right-0" style={{ willChange: 'transform' }}>
+        {/* Bar & beat grid lines */}
+        {gridLines.map((line, i) => (
+          <div
+            key={`grid-${i}`}
+            className="absolute left-0 right-0"
+            style={{ top: line.globalTime * PX_PER_MS }}
+          >
+            <div
+              className={`w-full ${line.isBarLine ? 'h-px' : 'h-px'}`}
+              style={{
+                background: line.isBarLine
+                  ? 'rgba(255,255,255,0.12)'
+                  : 'rgba(255,255,255,0.04)',
+              }}
+            />
+            {line.isBarLine && (
+              <span
+                className="absolute text-[9px] font-mono text-white/20 select-none"
+                style={{ left: 4, top: -10 }}
+              >
+                {line.barNumber}
+              </span>
+            )}
+          </div>
+        ))}
+
         {/* Completed notes */}
         {events.map((e, i) => {
           const x = pianoLeftPadding + getNoteX(e.midi, keyWidth);
           const w = getNoteWidth(e.midi, keyWidth);
           const topPx = e.globalTime * PX_PER_MS;
           const h = Math.max(3, e.duration * PX_PER_MS);
-          const isUser = e.source === 'user';
+          const sourceInfo = sources && sources.get(e.source);
+          const color = sourceInfo ? sourceInfo.color : (e.source === 'user' ? '#3b82f6' : '#f97316');
 
           return (
             <div
               key={`done-${i}`}
-              className={`absolute rounded-[3px] ${
-                isUser
-                  ? 'bg-blue-500/90 shadow-[0_0_6px_rgba(59,130,246,0.4)]'
-                  : 'bg-orange-500/90 shadow-[0_0_6px_rgba(249,115,22,0.4)]'
-              }`}
+              className="absolute rounded-[3px]"
               style={{
                 left: x,
                 top: topPx,
                 width: w - 1,
                 height: h,
+                backgroundColor: color,
+                opacity: 0.9,
+                boxShadow: `0 0 6px ${color}66`,
               }}
             />
           );
@@ -124,22 +204,21 @@ export default function Timeline({ events, heldNotes, breaks, inBreak, keyWidth,
           const x = pianoLeftPadding + getNoteX(midi, keyWidth);
           const w = getNoteWidth(midi, keyWidth);
           const topPx = info.globalTime * PX_PER_MS;
-          const isUser = info.source === 'user';
+          const sourceInfo = sources && sources.get(info.source);
+          const color = sourceInfo ? sourceInfo.color : (info.source === 'user' ? '#3b82f6' : '#f97316');
 
           return (
             <div
               key={`held-${midi}`}
               data-held={midi}
-              className={`absolute rounded-[3px] ${
-                isUser
-                  ? 'bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.6)]'
-                  : 'bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.6)]'
-              }`}
+              className="absolute rounded-[3px]"
               style={{
                 left: x,
                 top: topPx,
                 width: w - 1,
                 height: 3,
+                backgroundColor: color,
+                boxShadow: `0 0 8px ${color}99`,
               }}
             />
           );
