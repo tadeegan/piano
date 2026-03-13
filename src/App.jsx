@@ -105,6 +105,14 @@ function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            <a
+              href="https://github.com/tadeegan/piano"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] font-bold tracking-wide uppercase text-gray-500 hover:text-gray-300 transition-colors"
+            >
+              Fork on GitHub
+            </a>
             {/* Audio state indicator — clicking anywhere triggers initAndResume via window listeners */}
             {audioState !== 'running' && (
               <span className="flex items-center gap-1.5 text-[10px] font-bold tracking-wide uppercase px-2 py-1 rounded border text-yellow-400 border-yellow-400/30 bg-yellow-400/10 animate-pulse">
