@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useMultiplayer } from '../hooks/useMultiplayer';
 import { useSources } from '../hooks/useEngine';
 import engine from '../engine';
@@ -9,20 +9,6 @@ export default function RoomPanel() {
   const [joinCode, setJoinCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
-
-  // Auto-join from ?join=code URL param
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('join');
-    if (code && status === 'disconnected') {
-      setLoading(true);
-      joinRoom(code)
-        .catch((e) => console.error('Auto-join failed:', e))
-        .finally(() => setLoading(false));
-      // Clean up URL
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleHost = async () => {
     setLoading(true);
@@ -38,8 +24,7 @@ export default function RoomPanel() {
   };
 
   const handleCopy = () => {
-    const url = `${window.location.origin}${window.location.pathname}?join=${roomCode}`;
-    navigator.clipboard.writeText(url);
+    navigator.clipboard.writeText(window.location.href);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };

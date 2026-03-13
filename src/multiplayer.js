@@ -1,11 +1,33 @@
 /**
  * Multiplayer module — PeerJS-based WebRTC data channel manager.
  * Star topology: host relays all messages.
+ * Room ID is a UUID used as the host's PeerJS peer ID, stored in ?room= URL param.
  */
 import Peer from 'peerjs';
 import engine from './engine';
 
 const PEER_COLORS = ['#22c55e', '#a855f7', '#ec4899', '#06b6d4', '#eab308', '#ef4444'];
+
+function generateRoomId() {
+  // Short readable ID (8 chars)
+  return crypto.randomUUID().slice(0, 8);
+}
+
+function setUrlRoom(id) {
+  const url = new URL(window.location);
+  url.searchParams.set('room', id);
+  window.history.replaceState({}, '', url);
+}
+
+function clearUrlRoom() {
+  const url = new URL(window.location);
+  url.searchParams.delete('room');
+  window.history.replaceState({}, '', url.pathname);
+}
+
+function getUrlRoom() {
+  return new URLSearchParams(window.location.search).get('room');
+}
 
 function createMultiplayer() {
   let peer = null;
@@ -135,14 +157,16 @@ function createMultiplayer() {
   }
 
   function hostRoom(existingId) {
+    const id = existingId || generateRoomId();
     return new Promise((resolve, reject) => {
-      // If existingId provided, reclaim the same peer ID (rejoin after refresh)
-      peer = existingId ? new Peer(existingId) : new Peer();
+      // Use the room ID as the PeerJS peer ID
+      peer = new Peer(id);
 
-      peer.on('open', (id) => {
+      peer.on('open', () => {
         roomCode = id;
         status = 'hosting';
         isHost = true;
+        setUrlRoom(id);
         saveSession();
         notifyStatus();
         resolve(id);
@@ -155,6 +179,7 @@ function createMultiplayer() {
       peer.on('error', (err) => {
         if (status === 'disconnected') {
           clearSession();
+          clearUrlRoom();
           reject(err);
         }
       });
@@ -172,20 +197,17 @@ function createMultiplayer() {
           roomCode = code;
           status = 'joined';
           isHost = false;
+          setUrlRoom(code);
           saveSession();
 
-          // The host is a "peer" from our perspective for relay
           const hostSourceId = 'host';
-          // We don't add host to peers map — host notes come with source IDs
 
           conn.on('data', (data) => handleMessage(data, code));
           conn.on('close', () => disconnect());
           conn.on('error', () => disconnect());
 
-          // Store the host connection so we can broadcast to it
           peers.set(code, { conn, name: 'Host', color: '#3b82f6', sourceId: hostSourceId });
 
-          // Send hello
           conn.send(JSON.stringify({ t: 'hello', name: 'Peer' }));
 
           notifyStatus();
@@ -195,12 +217,14 @@ function createMultiplayer() {
 
         conn.on('error', (err) => {
           clearSession();
+          clearUrlRoom();
           reject(err);
         });
       });
 
       peer.on('error', (err) => {
         clearSession();
+        clearUrlRoom();
         reject(err);
       });
     });
@@ -208,6 +232,7 @@ function createMultiplayer() {
 
   function disconnect() {
     clearSession();
+    clearUrlRoom();
     // Unregister all peer sources
     for (const [, info] of peers) {
       engine.unregisterSource(info.sourceId);
@@ -228,21 +253,32 @@ function createMultiplayer() {
     notifyPeers();
   }
 
-  // Auto-rejoin on load from sessionStorage (skip if ?join= URL param present)
+  // Auto-rejoin on load from URL + sessionStorage
   function tryRestore() {
     try {
-      const params = new URLSearchParams(window.location.search);
-      if (params.has('join')) return; // let RoomPanel handle ?join= links
+      const urlRoom = getUrlRoom();
+      if (!urlRoom) return;
+
       const saved = sessionStorage.getItem(SESSION_KEY);
-      if (!saved) return;
-      const { roomCode: code, isHost: wasHost } = JSON.parse(saved);
-      if (!code) return;
-      if (wasHost) {
-        hostRoom(code).catch(() => clearSession());
-      } else {
-        joinRoom(code).catch(() => clearSession());
+      if (saved) {
+        const { roomCode: code, isHost: wasHost } = JSON.parse(saved);
+        // Session matches URL — restore role
+        if (code === urlRoom) {
+          if (wasHost) {
+            hostRoom(code).catch(() => { clearSession(); clearUrlRoom(); });
+          } else {
+            joinRoom(code).catch(() => { clearSession(); clearUrlRoom(); });
+          }
+          return;
+        }
       }
-    } catch { clearSession(); }
+
+      // URL has ?room= but no matching session — join as peer
+      joinRoom(urlRoom).catch(() => { clearSession(); clearUrlRoom(); });
+    } catch {
+      clearSession();
+      clearUrlRoom();
+    }
   }
 
   tryRestore();
